@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Clock, AlertCircle, CheckCircle2, Loader2, X } from "lucide-react";
 import { constructCheckinTransaction, constructClaimTransaction, constructCancelTransaction } from "@/lib/vault";
 import type { VaultData } from "@/lib/actions";
+import { toastSuccess, toastError } from "@/lib/toast";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 interface VaultCardProps {
   vault: VaultData;
@@ -62,6 +64,7 @@ function formatAddress(address: string): string {
 export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
   const { publicKey, wallet, signTransaction } = useWallet();
   const { connection } = useConnection();
+  const { network } = useNetwork();
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -113,10 +116,11 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
       const signature = await connection.sendRawTransaction(signedTransaction.serialize());
       await connection.confirmTransaction(signature, "confirmed");
 
-      console.log("Check-in successful:", signature);
+      toastSuccess("Check-in successful!", signature, network);
       onAction?.();
     } catch (error) {
       console.error("Error checking in:", error);
+      toastError("Failed to check in", error);
     } finally {
       setIsLoading(false);
     }
@@ -138,10 +142,11 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
       const signature = await connection.sendRawTransaction(signedTransaction.serialize());
       await connection.confirmTransaction(signature, "confirmed");
 
-      console.log("Claim successful:", signature);
+      toastSuccess("Vault claimed successfully!", signature, network);
       onAction?.();
     } catch (error) {
       console.error("Error claiming:", error);
+      toastError("Failed to claim vault", error);
     } finally {
       setIsLoading(false);
     }
@@ -163,10 +168,11 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
       const signature = await connection.sendRawTransaction(signedTransaction.serialize());
       await connection.confirmTransaction(signature, "confirmed");
 
-      console.log("Cancel successful:", signature);
+      toastSuccess("Vault cancelled successfully!", signature, network);
       onAction?.();
     } catch (error) {
       console.error("Error cancelling:", error);
+      toastError("Failed to cancel vault", error);
     } finally {
       setIsCancelling(false);
     }

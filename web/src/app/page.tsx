@@ -22,6 +22,7 @@ import { constructInitializeVaultTransaction } from "@/lib/vault";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { fetchVaultAccounts, getTokenBalance, type VaultData } from "@/lib/actions";
 import { VaultCard } from "@/components/VaultCard";
+import { toastSuccess, toastError } from "@/lib/toast";
 // import { buildGatewayTransaction } from "@/lib/gateway";
 
 export default function Home() {
@@ -206,7 +207,8 @@ export default function Home() {
       const signedTransaction = await signTransaction(transaction);
       const signature = await connection.sendRawTransaction(signedTransaction.serialize());
       await connection.confirmTransaction(signature, "confirmed");
-      console.log("Transaction sent:", signature);
+
+      toastSuccess("Vault initialized successfully!", signature, network);
 
       // Reset form and reload vaults
       handleReset();
@@ -214,6 +216,7 @@ export default function Home() {
       setActiveTab("owner");
     } catch (err) {
       console.error("Error:", err);
+      toastError("Failed to initialize vault", err);
     } finally {
       setIsInitializing(false);
     }
