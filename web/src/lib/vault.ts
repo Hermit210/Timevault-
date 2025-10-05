@@ -198,3 +198,44 @@ export async function constructClaimTransaction(
 
   return transaction;
 }
+
+export interface CancelParams {
+  owner: PublicKey;
+  mint: PublicKey;
+  beneficiary: PublicKey;
+  tokenAccount: PublicKey;
+}
+
+export async function constructCancelTransaction(
+  connection: Connection,
+  wallet: any,
+  params: CancelParams
+): Promise<Transaction> {
+  const { owner, mint, beneficiary, tokenAccount } = params;
+
+  const program = getProgram(connection, wallet);
+  const [handoverPDA] = findHandoverPDA(owner, mint, beneficiary);
+
+  const cancelIx = await program.methods
+    .cancel()
+    .accountsPartial({
+      owner: owner,
+      handover: handoverPDA,
+      tokenAccount: tokenAccount,
+      mint: mint,
+      beneficiary: beneficiary,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .instruction();
+
+  const transaction = new Transaction();
+  transaction.add(cancelIx);
+
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash();
+  transaction.recentBlockhash = blockhash;
+  transaction.lastValidBlockHeight = lastValidBlockHeight;
+  transaction.feePayer = owner;
+
+  return transaction;
+}

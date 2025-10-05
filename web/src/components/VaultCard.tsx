@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Clock, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-import { constructCheckinTransaction, constructClaimTransaction } from "@/lib/vault";
+import { Clock, AlertCircle, CheckCircle2, Loader2, X } from "lucide-react";
+import { constructCheckinTransaction, constructClaimTransaction, constructCancelTransaction } from "@/lib/vault";
 import type { VaultData } from "@/lib/actions";
 
 interface VaultCardProps {
@@ -64,6 +64,7 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
   const { connection } = useConnection();
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
     const calculateTimeRemaining = () => {
@@ -143,6 +144,31 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
       console.error("Error claiming:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!publicKey || !wallet || !signTransaction) return;
+
+    setIsCancelling(true);
+    try {
+      const transaction = await constructCancelTransaction(connection, wallet, {
+        owner: new PublicKey(vault.owner),
+        mint: new PublicKey(vault.mint),
+        beneficiary: new PublicKey(vault.beneficiary),
+        tokenAccount: new PublicKey(vault.tokenAccount),
+      });
+
+      const signedTransaction = await signTransaction(transaction);
+      const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+      await connection.confirmTransaction(signature, "confirmed");
+
+      console.log("Cancel successful:", signature);
+      onAction?.();
+    } catch (error) {
+      console.error("Error cancelling:", error);
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -305,22 +331,42 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
           {type === "owner" ? (
-            <Button
-              onClick={handleCheckin}
-              disabled={isLoading}
-              className="cursor-pointer"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Check In"
-              )}
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={handleCancel}
+                disabled={isLoading || isCancelling}
+                className="cursor-pointer"
+              >
+                {isCancelling ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cancelling...
+                  </>
+                ) : (
+                  <>
+                    <X className="mr-2 h-4 w-4" />
+                    Cancel Vault
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={handleCheckin}
+                disabled={isLoading || isCancelling}
+                className="cursor-pointer"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Check In"
+                )}
+              </Button>
+            </>
           ) : (
             <Button
               onClick={handleClaim}
