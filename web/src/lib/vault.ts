@@ -6,7 +6,7 @@ import {
   LAMPORTS_PER_SOL,
   Keypair,
 } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { BN } from "@coral-xyz/anchor";
 import { getProgram, findHandoverPDA } from "./program";
 
@@ -97,4 +97,104 @@ export async function getVaultInfo(
     console.error("Error fetching vault info:", error);
     return null;
   }
+}
+
+export interface CheckinParams {
+  owner: PublicKey;
+  mint: PublicKey;
+  beneficiary: PublicKey;
+}
+
+export async function constructCheckinTransaction(
+  connection: Connection,
+  wallet: any,
+  params: CheckinParams
+): Promise<Transaction> {
+  const { owner, mint, beneficiary } = params;
+
+  const program = getProgram(connection, wallet);
+  const [handoverPDA] = findHandoverPDA(owner, mint, beneficiary);
+
+  const checkinIx = await program.methods
+    .checkin()
+    .accountsPartial({
+      owner: owner,
+      handover: handoverPDA,
+      mint: mint,
+      beneficiary: beneficiary,
+    })
+    .instruction();
+
+  const transaction = new Transaction();
+  transaction.add(checkinIx);
+
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash();
+  transaction.recentBlockhash = blockhash;
+  transaction.lastValidBlockHeight = lastValidBlockHeight;
+  transaction.feePayer = owner;
+
+  return transaction;
+}
+
+export interface ClaimParams {
+  beneficiary: PublicKey;
+  owner: PublicKey;
+  mint: PublicKey;
+  tokenAccount: PublicKey;
+}
+
+export async function constructClaimTransaction(
+  connection: Connection,
+  wallet: any,
+  params: ClaimParams
+): Promise<Transaction> {
+  const { beneficiary, owner, mint, tokenAccount } = params;
+
+  const program = getProgram(connection, wallet);
+  const [handoverPDA] = findHandoverPDA(owner, mint, beneficiary);
+
+  // Get associated token accounts
+  const beneficiaryTokenAccount = getAssociatedTokenAddressSync(
+    mint,
+    beneficiary,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const feeAuthority = new PublicKey("54o5R8Bxwceb5y9Q1nCb3p8eHyDnWDbCNvxptkbaSCi2");
+  const feeTokenAccount = getAssociatedTokenAddressSync(
+    mint,
+    feeAuthority,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const claimIx = await program.methods
+    .claim()
+    .accountsPartial({
+      beneficiary: beneficiary,
+      owner: owner,
+      handover: handoverPDA,
+      tokenAccount: tokenAccount,
+      beneficiaryTokenAccount: beneficiaryTokenAccount,
+      feeTokenAccount: feeTokenAccount,
+      feeAuthority: feeAuthority,
+      mint: mint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .instruction();
+
+  const transaction = new Transaction();
+  transaction.add(claimIx);
+
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash();
+  transaction.recentBlockhash = blockhash;
+  transaction.lastValidBlockHeight = lastValidBlockHeight;
+  transaction.feePayer = beneficiary;
+
+  return transaction;
 }

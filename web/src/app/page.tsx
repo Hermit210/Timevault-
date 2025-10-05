@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
@@ -17,9 +17,11 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Clock, Heart, Shield, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Clock, Heart, Shield, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { constructInitializeVaultTransaction } from "@/lib/vault";
 import { useNetwork } from "@/contexts/NetworkContext";
+import { fetchVaultAccounts, getTokenBalance, type VaultData } from "@/lib/actions";
+import { VaultCard } from "@/components/VaultCard";
 // import { buildGatewayTransaction } from "@/lib/gateway";
 
 export default function Home() {
@@ -29,22 +31,152 @@ export default function Home() {
   const { network } = useNetwork();
 
   const [timeoutDays, setTimeoutDays] = useState<string>("30");
+  const [timeoutHours, setTimeoutHours] = useState<string>("0");
+  const [timeoutMinutes, setTimeoutMinutes] = useState<string>("0");
+  const [timeoutSeconds, setTimeoutSecondsInput] = useState<string>("0");
   const [beneficiaryAddress, setBeneficiaryAddress] = useState<string>("");
   const [mintAddress, setMintAddress] = useState<string>("");
   const [activeTab, setActiveTab] = useState<string>("owner");
 
-  // Convert days to seconds for the Solana program
-  const timeoutSeconds = timeoutDays ? Math.floor(Number(timeoutDays) * 24 * 60 * 60) : 0;
+  const [ownerVaults, setOwnerVaults] = useState<VaultData[]>([]);
+  const [beneficiaryVaults, setBeneficiaryVaults] = useState<VaultData[]>([]);
+  const [vaultBalances, setVaultBalances] = useState<Record<string, number>>({});
+  const [isLoadingVaults, setIsLoadingVaults] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+
+  // Convert days/hours/minutes/seconds to total seconds for the Solana program
+  const timeoutSecondsTotal =
+    (Number(timeoutDays) || 0) * 86400 +
+    (Number(timeoutHours) || 0) * 3600 +
+    (Number(timeoutMinutes) || 0) * 60 +
+    (Number(timeoutSeconds) || 0);
+
+  // Fetch vaults when wallet connects or network changes
+  useEffect(() => {
+    const loadVaults = async () => {
+      if (!publicKey) {
+        setOwnerVaults([]);
+        setBeneficiaryVaults([]);
+        setVaultBalances({});
+        return;
+      }
+
+      setIsLoadingVaults(true);
+      try {
+        const { ownerVaults: owned, beneficiaryVaults: beneficiary } =
+          await fetchVaultAccounts(publicKey.toString(), network);
+
+        setOwnerVaults(owned);
+        setBeneficiaryVaults(beneficiary);
+
+        // Fetch balances for all vaults
+        const balances: Record<string, number> = {};
+        const allVaults = [...owned, ...beneficiary];
+
+        await Promise.all(
+          allVaults.map(async (vault) => {
+            try {
+              const balance = await getTokenBalance(vault.tokenAccount, network);
+              balances[vault.publicKey] = balance;
+            } catch (error) {
+              console.error(`Error fetching balance for ${vault.publicKey}:`, error);
+              balances[vault.publicKey] = 0;
+            }
+          })
+        );
+
+        setVaultBalances(balances);
+      } catch (error) {
+        console.error("Error loading vaults:", error);
+      } finally {
+        setIsLoadingVaults(false);
+      }
+    };
+
+    loadVaults();
+  }, [publicKey, network]);
+
+  const reloadVaults = async () => {
+    if (!publicKey) return;
+
+    setIsLoadingVaults(true);
+    try {
+      const { ownerVaults: owned, beneficiaryVaults: beneficiary } =
+        await fetchVaultAccounts(publicKey.toString(), network);
+
+      setOwnerVaults(owned);
+      setBeneficiaryVaults(beneficiary);
+
+      // Fetch balances for all vaults
+      const balances: Record<string, number> = {};
+      const allVaults = [...owned, ...beneficiary];
+
+      await Promise.all(
+        allVaults.map(async (vault) => {
+          try {
+            const balance = await getTokenBalance(vault.tokenAccount, network);
+            balances[vault.publicKey] = balance;
+          } catch (error) {
+            console.error(`Error fetching balance for ${vault.publicKey}:`, error);
+            balances[vault.publicKey] = 0;
+          }
+        })
+      );
+
+      setVaultBalances(balances);
+    } catch (error) {
+      console.error("Error reloading vaults:", error);
+    } finally {
+      setIsLoadingVaults(false);
+    }
+  };
+
+  // Calculate next check-in time for owner vaults
+  const getNextCheckin = () => {
+    if (ownerVaults.length === 0) return null;
+
+    const now = Math.floor(Date.now() / 1000);
+    let closestDeadline = Infinity;
+
+    for (const vault of ownerVaults) {
+      const deadline = vault.lastCheckin + vault.timeout;
+      const timeUntil = deadline - now;
+      if (timeUntil > 0 && timeUntil < closestDeadline) {
+        closestDeadline = timeUntil;
+      }
+    }
+
+    return closestDeadline === Infinity ? null : closestDeadline;
+  };
+
+  const formatNextCheckin = () => {
+    const seconds = getNextCheckin();
+    if (!seconds) return "--";
+
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${secs}s`;
+    return `${secs}s`;
+  };
 
   const handleReset = () => {
     setBeneficiaryAddress("");
     setMintAddress("");
     setTimeoutDays("30");
+    setTimeoutHours("0");
+    setTimeoutMinutes("0");
+    setTimeoutSecondsInput("0");
   };
 
   const handleInitializeVault = async () => {
     if (!publicKey || !wallet || !beneficiaryAddress || !mintAddress || !signTransaction) return;
 
+    setIsInitializing(true);
     try {
       const beneficiaryPubkey = new PublicKey(beneficiaryAddress);
       const mintPubkey = new PublicKey(mintAddress);
@@ -63,7 +195,7 @@ export default function Home() {
           beneficiary: beneficiaryPubkey,
           mint: mintPubkey,
           tokenAccount: tokenAccount,
-          timeoutSeconds: timeoutSeconds,
+          timeoutSeconds: timeoutSecondsTotal,
         }
       );
 
@@ -72,11 +204,18 @@ export default function Home() {
       // const gatewayTx = await buildGatewayTransaction(serializedTx, "mainnet");
 
       const signedTransaction = await signTransaction(transaction);
-      const sentTransaction = await connection.sendRawTransaction(signedTransaction.serialize());
-      console.log("Transaction sent:", sentTransaction);
+      const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+      await connection.confirmTransaction(signature, "confirmed");
+      console.log("Transaction sent:", signature);
 
+      // Reset form and reload vaults
+      handleReset();
+      await reloadVaults();
+      setActiveTab("owner");
     } catch (err) {
       console.error("Error:", err);
+    } finally {
+      setIsInitializing(false);
     }
   };
 
@@ -122,7 +261,13 @@ export default function Home() {
                   <Shield className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">0</div>
+                  <div className="text-2xl font-bold">
+                    {isLoadingVaults ? (
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    ) : (
+                      ownerVaults.length
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">As owner</p>
                 </CardContent>
               </Card>
@@ -135,7 +280,13 @@ export default function Home() {
                   <Heart className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">0</div>
+                  <div className="text-2xl font-bold">
+                    {isLoadingVaults ? (
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    ) : (
+                      beneficiaryVaults.length
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">
                     Vaults you can inherit
                   </p>
@@ -150,9 +301,15 @@ export default function Home() {
                   <Clock className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">--</div>
+                  <div className="text-2xl font-bold">
+                    {isLoadingVaults ? (
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    ) : (
+                      formatNextCheckin()
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    No active vaults
+                    {ownerVaults.length === 0 ? "No active vaults" : "Time until next check-in"}
                   </p>
                 </CardContent>
               </Card>
@@ -167,51 +324,123 @@ export default function Home() {
               </TabsList>
 
               <TabsContent value="owner" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Your Inheritance Vaults</CardTitle>
-                    <CardDescription>
-                      Vaults where you are the owner. Check in regularly to keep
-                      them active.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <div className="rounded-full bg-muted p-3 mb-4">
-                        <Shield className="h-6 w-6 text-muted-foreground" />
+                {isLoadingVaults ? (
+                  <Card>
+                    <CardContent className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </CardContent>
+                  </Card>
+                ) : ownerVaults.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold">Your Inheritance Vaults</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Check in regularly to keep them active
+                        </p>
                       </div>
-                      <h3 className="font-semibold mb-1">No vaults yet</h3>
-                      <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                        Create your first inheritance vault to protect your
-                        assets
-                      </p>
-                      <Button className="cursor-pointer" onClick={() => setActiveTab("create")}>Create Vault</Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={reloadVaults}
+                        disabled={isLoadingVaults}
+                      >
+                        Refresh
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
+                    {ownerVaults.map((vault) => (
+                      <VaultCard
+                        key={vault.publicKey}
+                        vault={vault}
+                        type="owner"
+                        balance={vaultBalances[vault.publicKey] || 0}
+                        onAction={reloadVaults}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Your Inheritance Vaults</CardTitle>
+                      <CardDescription>
+                        Vaults where you are the owner. Check in regularly to keep
+                        them active.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="rounded-full bg-muted p-3 mb-4">
+                          <Shield className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <h3 className="font-semibold mb-1">No vaults yet</h3>
+                        <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+                          Create your first inheritance vault to protect your
+                          assets
+                        </p>
+                        <Button className="cursor-pointer" onClick={() => setActiveTab("create")}>Create Vault</Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
 
               <TabsContent value="beneficiary" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Vaults You Can Inherit</CardTitle>
-                    <CardDescription>
-                      Vaults where you are the beneficiary. You can claim these
-                      if the owner becomes inactive.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <div className="rounded-full bg-muted p-3 mb-4">
-                        <Heart className="h-6 w-6 text-muted-foreground" />
+                {isLoadingVaults ? (
+                  <Card>
+                    <CardContent className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </CardContent>
+                  </Card>
+                ) : beneficiaryVaults.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold">Vaults You Can Inherit</h3>
+                        <p className="text-sm text-muted-foreground">
+                          You can claim these if the owner becomes inactive
+                        </p>
                       </div>
-                      <h3 className="font-semibold mb-1">No vaults assigned</h3>
-                      <p className="text-sm text-muted-foreground max-w-sm">
-                        You are not a beneficiary of any vaults yet
-                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={reloadVaults}
+                        disabled={isLoadingVaults}
+                      >
+                        Refresh
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
+                    {beneficiaryVaults.map((vault) => (
+                      <VaultCard
+                        key={vault.publicKey}
+                        vault={vault}
+                        type="beneficiary"
+                        balance={vaultBalances[vault.publicKey] || 0}
+                        onAction={reloadVaults}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Vaults You Can Inherit</CardTitle>
+                      <CardDescription>
+                        Vaults where you are the beneficiary. You can claim these
+                        if the owner becomes inactive.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="rounded-full bg-muted p-3 mb-4">
+                          <Heart className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <h3 className="font-semibold mb-1">No vaults assigned</h3>
+                        <p className="text-sm text-muted-foreground max-w-sm">
+                          You are not a beneficiary of any vaults yet
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
 
               <TabsContent value="create" className="space-y-4">
@@ -276,17 +505,69 @@ export default function Home() {
 
                       <div className="space-y-2">
                         <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                          Timeout Period (days)
+                          Timeout Period
                         </label>
-                        <input
-                          type="number"
-                          placeholder="30"
-                          value={timeoutDays}
-                          onChange={(e) => setTimeoutDays(e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
+                        <div className="grid grid-cols-4 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Days</label>
+                            <select
+                              value={timeoutDays}
+                              onChange={(e) => setTimeoutDays(e.target.value)}
+                              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              {Array.from({ length: 366 }, (_, i) => (
+                                <option key={i} value={i}>
+                                  {i}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Hours</label>
+                            <select
+                              value={timeoutHours}
+                              onChange={(e) => setTimeoutHours(e.target.value)}
+                              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              {Array.from({ length: 24 }, (_, i) => (
+                                <option key={i} value={i}>
+                                  {i}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Minutes</label>
+                            <select
+                              value={timeoutMinutes}
+                              onChange={(e) => setTimeoutMinutes(e.target.value)}
+                              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              {Array.from({ length: 60 }, (_, i) => (
+                                <option key={i} value={i}>
+                                  {i}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Seconds</label>
+                            <select
+                              value={timeoutSeconds}
+                              onChange={(e) => setTimeoutSecondsInput(e.target.value)}
+                              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              {Array.from({ length: 60 }, (_, i) => (
+                                <option key={i} value={i}>
+                                  {i}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
                         <p className="text-xs text-muted-foreground">
-                          Recommended: 30 days ({timeoutSeconds.toLocaleString()} seconds)
+                          Total: {timeoutSecondsTotal.toLocaleString()} seconds
+                          {timeoutSecondsTotal >= 86400 && ` (${Math.floor(timeoutSecondsTotal / 86400)} days)`}
                         </p>
                       </div>
                     </div>
@@ -294,15 +575,27 @@ export default function Home() {
                     <Separator />
 
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" className="cursor-pointer" onClick={handleReset}>
+                      <Button
+                        variant="outline"
+                        className="cursor-pointer"
+                        onClick={handleReset}
+                        disabled={isInitializing}
+                      >
                         Reset
                       </Button>
                       <Button
                         className="cursor-pointer"
                         onClick={handleInitializeVault}
-                        disabled={!connected}
+                        disabled={!connected || isInitializing}
                       >
-                        Initialize Vault
+                        {isInitializing ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Initializing...
+                          </>
+                        ) : (
+                          "Initialize Vault"
+                        )}
                       </Button>
                     </div>
                   </CardContent>
