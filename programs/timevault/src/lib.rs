@@ -24,4 +24,8 @@ pub mod timevault {
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         instructions::claim::claim(ctx)
     }
+
+    pub fn cancel(ctx: Context<Cancel>) -> Result<()> {
+        instructions::cancel::cancel(ctx)
+    }
 }

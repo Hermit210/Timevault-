@@ -205,6 +205,141 @@ describe("timevault", () => {
     }
   });
 
+  it("Cancel - fails when non-owner tries to cancel", async () => {
+    try {
+      await program.methods
+        .cancel()
+        .accountsPartial({
+          owner: owner.publicKey,
+          tokenAccount: ownerTokenAccount,
+          mint: mint,
+          beneficiary: beneficiary.publicKey,
+        })
+        .signers([beneficiary])
+        .rpc();
+
+      assert.fail("Should have failed when non-owner tries to cancel");
+    } catch (error) {
+      // Expected to fail due to constraint violation
+      assert.isTrue(error.toString().includes("Error"));
+    }
+  });
+
+  it("Cancel - successfully cancels vault and revokes delegation", async () => {
+    // Verify delegation exists before cancel
+    const tokenAccountBefore = await getAccount(
+      provider.connection,
+      ownerTokenAccount
+    );
+    assert.equal(
+      tokenAccountBefore.delegate?.toString(),
+      handoverPda.toString(),
+      "Handover PDA should be delegate before cancel"
+    );
+    assert.equal(
+      tokenAccountBefore.delegatedAmount.toString(),
+      "18446744073709551615", // u64::MAX
+      "Delegated amount should be u64::MAX before cancel"
+    );
+
+    // Get owner's SOL balance before (to verify rent is returned)
+    const ownerBalanceBefore = await provider.connection.getBalance(
+      owner.publicKey
+    );
+
+    // Cancel the vault
+    const tx = await program.methods
+      .cancel()
+      .accountsPartial({
+        owner: owner.publicKey,
+        tokenAccount: ownerTokenAccount,
+        mint: mint,
+        beneficiary: beneficiary.publicKey,
+      })
+      .signers([owner])
+      .rpc();
+
+    console.log("Cancel transaction signature:", tx);
+
+    // Verify delegation was revoked
+    const tokenAccountAfter = await getAccount(
+      provider.connection,
+      ownerTokenAccount
+    );
+    assert.isNull(
+      tokenAccountAfter.delegate,
+      "Delegate should be null after cancel"
+    );
+    assert.equal(
+      tokenAccountAfter.delegatedAmount.toString(),
+      "0",
+      "Delegated amount should be 0 after cancel"
+    );
+
+    // Verify handover account is closed
+    try {
+      await program.account.handover.fetch(handoverPda);
+      assert.fail("Handover account should be closed after cancel");
+    } catch (error) {
+      assert.include(
+        error.toString(),
+        "Account does not exist",
+        "Handover account should be closed"
+      );
+    }
+
+    // Verify owner received rent back (balance should increase)
+    const ownerBalanceAfter = await provider.connection.getBalance(
+      owner.publicKey
+    );
+    assert.isAbove(
+      ownerBalanceAfter,
+      ownerBalanceBefore,
+      "Owner should receive rent back"
+    );
+
+    console.log(
+      `Rent returned to owner: ${
+        (ownerBalanceAfter - ownerBalanceBefore) / anchor.web3.LAMPORTS_PER_SOL
+      } SOL`
+    );
+  });
+
+  // Re-initialize for remaining tests
+  it("Re-initialize - creates a new handover for claim tests", async () => {
+    const tx = await program.methods
+      .initialize(new BN(TIMEOUT))
+      .accounts({
+        owner: owner.publicKey,
+        tokenAccount: ownerTokenAccount,
+        mint: mint,
+        beneficiary: beneficiary.publicKey,
+      })
+      .signers([owner])
+      .rpc();
+
+    console.log("Re-initialize transaction signature:", tx);
+
+    // Fetch and verify the handover account
+    const handoverAccount = await program.account.handover.fetch(handoverPda);
+    assert.equal(
+      handoverAccount.owner.toString(),
+      owner.publicKey.toString(),
+      "Owner should match after re-initialization"
+    );
+
+    // Verify delegation was re-set
+    const tokenAccountInfo = await getAccount(
+      provider.connection,
+      ownerTokenAccount
+    );
+    assert.equal(
+      tokenAccountInfo.delegate?.toString(),
+      handoverPda.toString(),
+      "Handover PDA should be delegate after re-initialization"
+    );
+  });
+
   it("Claim - fails when timeout hasn't expired", async () => {
     try {
       await program.methods
