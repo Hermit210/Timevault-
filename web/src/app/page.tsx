@@ -19,8 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Clock, Heart, Shield, AlertCircle, CheckCircle2 } from "lucide-react";
 import { constructInitializeVaultTransaction } from "@/lib/vault";
-import { buildGatewayTransaction } from "@/lib/gateway";
 import { useNetwork } from "@/contexts/NetworkContext";
+// import { buildGatewayTransaction } from "@/lib/gateway";
 
 export default function Home() {
   const { connected, shortAddress } = useWalletInfo();
@@ -31,9 +31,16 @@ export default function Home() {
   const [timeoutDays, setTimeoutDays] = useState<string>("30");
   const [beneficiaryAddress, setBeneficiaryAddress] = useState<string>("");
   const [mintAddress, setMintAddress] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<string>("owner");
 
   // Convert days to seconds for the Solana program
   const timeoutSeconds = timeoutDays ? Math.floor(Number(timeoutDays) * 24 * 60 * 60) : 0;
+
+  const handleReset = () => {
+    setBeneficiaryAddress("");
+    setMintAddress("");
+    setTimeoutDays("30");
+  };
 
   const handleInitializeVault = async () => {
     if (!publicKey || !wallet || !beneficiaryAddress || !mintAddress || !signTransaction) return;
@@ -60,14 +67,9 @@ export default function Home() {
         }
       );
 
+      // // TODO: Gateway Integration
       // const serializedTx = transaction.serialize({ requireAllSignatures: false }).toString("base64");
-      // console.log(serializedTx);
-
       // const gatewayTx = await buildGatewayTransaction(serializedTx, "mainnet");
-
-      // console.log("Transaction constructed:", gatewayTx);
-
-      // TODO: Sign and send transaction
 
       const signedTransaction = await signTransaction(transaction);
       const sentTransaction = await connection.sendRawTransaction(signedTransaction.serialize());
@@ -157,7 +159,7 @@ export default function Home() {
             </div>
 
             {/* Tabs Section */}
-            <Tabs defaultValue="owner" className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
               <TabsList>
                 <TabsTrigger value="owner">As Owner</TabsTrigger>
                 <TabsTrigger value="beneficiary">As Beneficiary</TabsTrigger>
@@ -183,7 +185,7 @@ export default function Home() {
                         Create your first inheritance vault to protect your
                         assets
                       </p>
-                      <Button className="cursor-pointer">Create Vault</Button>
+                      <Button className="cursor-pointer" onClick={() => setActiveTab("create")}>Create Vault</Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -292,7 +294,7 @@ export default function Home() {
                     <Separator />
 
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" className="cursor-pointer">
+                      <Button variant="outline" className="cursor-pointer" onClick={handleReset}>
                         Reset
                       </Button>
                       <Button

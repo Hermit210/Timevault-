@@ -2,7 +2,7 @@
 import { GATEWAY_ENDPOINT } from "./consts";
 
 async function buildGatewayTransaction(tx: string, network: "devnet" | "mainnet") {
-  const gatewayUrl = `${GATEWAY_ENDPOINT}/${network}?apiKey=${process.env["GATEWAY_API_KEY"]}`;
+  const gatewayUrl = `${GATEWAY_ENDPOINT}/v1/${network}?apiKey=${process.env["GATEWAY_API_KEY"]}`;
   console.log(gatewayUrl);
 
   const buildGatewayTransactionResponse = await fetch(gatewayUrl, {
@@ -14,7 +14,7 @@ async function buildGatewayTransaction(tx: string, network: "devnet" | "mainnet"
       id: "timevault",
       jsonrpc: "2.0",
       method: "buildGatewayTransaction",
-      params: [tx, { encoding: "base64" }],
+      params: [tx],
     }),
   });
 
