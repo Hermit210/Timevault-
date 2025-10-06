@@ -23,6 +23,7 @@ import { useNetwork } from "@/contexts/NetworkContext";
 import { fetchVaultAccounts, getTokenBalance, type VaultData } from "@/lib/actions";
 import { VaultCard } from "@/components/VaultCard";
 import { toastSuccess, toastError } from "@/lib/toast";
+import { buildGatewayTransaction, sendGatewayTransaction } from "@/lib/gateway";
 // import { buildGatewayTransaction } from "@/lib/gateway";
 
 export default function Home() {
@@ -200,15 +201,16 @@ export default function Home() {
         }
       );
 
-      // // TODO: Gateway Integration
-      // const serializedTx = transaction.serialize({ requireAllSignatures: false }).toString("base64");
-      // const gatewayTx = await buildGatewayTransaction(serializedTx, "mainnet");
+      const serializedTx = transaction.serialize({ requireAllSignatures: false }).toString("base64");
+      const gatewayTx = await buildGatewayTransaction(serializedTx, network);
+      console.log(gatewayTx);
 
-      const signedTransaction = await signTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-      await connection.confirmTransaction(signature, "confirmed");
+      const signedTransaction = await signTransaction(gatewayTx);
+      const serializedSignedTx = signedTransaction.serialize().toString("base64");
+      const gatewayResponse = await sendGatewayTransaction(serializedSignedTx, network);
+      console.log(gatewayResponse);
 
-      toastSuccess("Vault initialized successfully!", signature, network);
+      toastSuccess("Vault initialized successfully!", "", network);
 
       // Reset form and reload vaults
       handleReset();
