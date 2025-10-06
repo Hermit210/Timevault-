@@ -18,7 +18,7 @@ export function NetworkSwitcher() {
 
   const networks: { value: Network; label: string; disabled?: boolean }[] = [
     { value: 'devnet', label: 'Devnet' },
-    { value: 'mainnet-beta', label: 'Mainnet', disabled: true },
+    { value: 'mainnet', label: 'Mainnet', disabled: true },
   ];
 
   const currentNetwork = networks.find((n) => n.value === network);
