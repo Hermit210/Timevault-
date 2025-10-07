@@ -1,9 +1,18 @@
 "use server";
-import { Transaction } from "@solana/web3.js";
 import { GATEWAY_ENDPOINT } from "./consts";
 
-async function buildGatewayTransaction(tx: string, network: "devnet" | "mainnet") {
+async function buildGatewayTransaction(tx: string, network: "devnet" | "mainnet"): Promise<{
+  transaction: string;
+  latestBlockhash: {
+    blockhash: string;
+    lastValidBlockHeight: string;
+  };
+}> {
   const gatewayUrl = `${GATEWAY_ENDPOINT}/v1/${network}?apiKey=${process.env["GATEWAY_API_KEY"]}`;
+
+  console.log(gatewayUrl);
+  console.log(tx);
+
   const buildGatewayTransactionResponse = await fetch(gatewayUrl, {
     method: "POST",
     headers: {
@@ -23,9 +32,9 @@ async function buildGatewayTransaction(tx: string, network: "devnet" | "mainnet"
 
   const data = await buildGatewayTransactionResponse.json();
   console.log(data);
-  
+
   const {
-    result: { transaction: encodedTransaction },
+    result: { transaction: encodedTransaction, latestBlockhash },
   } = data as {
     result: {
       transaction: string;
@@ -36,11 +45,16 @@ async function buildGatewayTransaction(tx: string, network: "devnet" | "mainnet"
     };
   };
 
-  const gatewayTx = Transaction.from(Buffer.from(encodedTransaction, "base64"));
-  return gatewayTx;
+  return {
+    transaction: encodedTransaction,
+    latestBlockhash: {
+      blockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    },
+  };
 }
 
-async function sendGatewayTransaction(tx: string, network: "devnet" | "mainnet") {
+async function sendGatewayTransaction(tx: string, network: "devnet" | "mainnet"): Promise<string> {
   const gatewayUrl = `${GATEWAY_ENDPOINT}/v1/${network}?apiKey=${process.env["GATEWAY_API_KEY"]}`;
   const sendGatewayTransactionResponse = await fetch(gatewayUrl, {
     method: "POST",
@@ -54,8 +68,13 @@ async function sendGatewayTransaction(tx: string, network: "devnet" | "mainnet")
       params: [tx],
     }),
   });
+
+  if (!sendGatewayTransactionResponse.ok) {
+    throw new Error("Failed to send gateway transaction");
+  }
+
   const gatewayResponse = await sendGatewayTransactionResponse.json();
-  return gatewayResponse;
+  return gatewayResponse.result;
 }
 
 export { buildGatewayTransaction, sendGatewayTransaction };

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import {
   Card,
   CardContent,
@@ -17,6 +17,7 @@ import { constructCheckinTransaction, constructClaimTransaction, constructCancel
 import type { VaultData } from "@/lib/actions";
 import { toastSuccess, toastError } from "@/lib/toast";
 import { useNetwork } from "@/contexts/NetworkContext";
+import { buildGatewayTransaction, sendGatewayTransaction } from "@/lib/gateway";
 
 interface VaultCardProps {
   vault: VaultData;
@@ -110,18 +111,30 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
         beneficiary: new PublicKey(vault.beneficiary),
       });
 
-      // TODO: Gateway Integration
+      const serializedTx = transaction.serialize({ requireAllSignatures: false }).toString("base64");
+      const { transaction: gatewayTxEncoded } = await buildGatewayTransaction(serializedTx, network);
+      const gatewayTx = Transaction.from(Buffer.from(gatewayTxEncoded, "base64"));
 
-      const signedTransaction = await signTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-      await connection.confirmTransaction(signature, "confirmed");
+      const signedTransaction = await signTransaction(gatewayTx);
+      const serializedSignedTx = signedTransaction.serialize().toString("base64");
+      const signature = await sendGatewayTransaction(serializedSignedTx, network);
 
-      toastSuccess("Check-in successful!", signature, network);
-      onAction?.();
+      await connection.onSignature(signature, async (result) => {
+        if (result.err) {
+          console.error("Error:", result.err);
+          toastError("Failed to check in", result.err);
+          setIsLoading(false);
+          return;
+        }
+
+        toastSuccess("Check-in successful!", signature, network);
+        onAction?.();
+        setIsLoading(false);
+      }, "confirmed");
+
     } catch (error) {
       console.error("Error checking in:", error);
       toastError("Failed to check in", error);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -138,16 +151,30 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
         tokenAccount: new PublicKey(vault.tokenAccount),
       });
 
-      const signedTransaction = await signTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-      await connection.confirmTransaction(signature, "confirmed");
+      const serializedTx = transaction.serialize({ requireAllSignatures: false }).toString("base64");
+      const { transaction: gatewayTxEncoded } = await buildGatewayTransaction(serializedTx, network);
+      const gatewayTx = Transaction.from(Buffer.from(gatewayTxEncoded, "base64"));
 
-      toastSuccess("Vault claimed successfully!", signature, network);
-      onAction?.();
+      const signedTransaction = await signTransaction(gatewayTx);
+      const serializedSignedTx = signedTransaction.serialize().toString("base64");
+      const signature = await sendGatewayTransaction(serializedSignedTx, network);
+
+      await connection.onSignature(signature, async (result) => {
+        if (result.err) {
+          console.error("Error:", result.err);
+          toastError("Failed to claim vault", result.err);
+          setIsLoading(false);
+          return;
+        }
+
+        toastSuccess("Vault claimed successfully!", signature, network);
+        onAction?.();
+        setIsLoading(false);
+      }, "confirmed");
+
     } catch (error) {
       console.error("Error claiming:", error);
       toastError("Failed to claim vault", error);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -164,16 +191,30 @@ export function VaultCard({ vault, type, balance, onAction }: VaultCardProps) {
         tokenAccount: new PublicKey(vault.tokenAccount),
       });
 
-      const signedTransaction = await signTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-      await connection.confirmTransaction(signature, "confirmed");
+      const serializedTx = transaction.serialize({ requireAllSignatures: false }).toString("base64");
+      const { transaction: gatewayTxEncoded } = await buildGatewayTransaction(serializedTx, network);
+      const gatewayTx = Transaction.from(Buffer.from(gatewayTxEncoded, "base64"));
 
-      toastSuccess("Vault cancelled successfully!", signature, network);
-      onAction?.();
+      const signedTransaction = await signTransaction(gatewayTx);
+      const serializedSignedTx = signedTransaction.serialize().toString("base64");
+      const signature = await sendGatewayTransaction(serializedSignedTx, network);
+
+      await connection.onSignature(signature, async (result) => {
+        if (result.err) {
+          console.error("Error:", result.err);
+          toastError("Failed to cancel vault", result.err);
+          setIsCancelling(false);
+          return;
+        }
+
+        toastSuccess("Vault cancelled successfully!", signature, network);
+        onAction?.();
+        setIsCancelling(false);
+      }, "confirmed");
+
     } catch (error) {
       console.error("Error cancelling:", error);
       toastError("Failed to cancel vault", error);
-    } finally {
       setIsCancelling(false);
     }
   };

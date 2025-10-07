@@ -202,24 +202,31 @@ export default function Home() {
       );
 
       const serializedTx = transaction.serialize({ requireAllSignatures: false }).toString("base64");
-      const gatewayTx = await buildGatewayTransaction(serializedTx, network);
-      console.log(gatewayTx);
+      const { transaction: gatewayTxEncoded } = await buildGatewayTransaction(serializedTx, network);
+      const gatewayTx = Transaction.from(Buffer.from(gatewayTxEncoded, "base64"));
 
       const signedTransaction = await signTransaction(gatewayTx);
       const serializedSignedTx = signedTransaction.serialize().toString("base64");
-      const gatewayResponse = await sendGatewayTransaction(serializedSignedTx, network);
-      console.log(gatewayResponse);
+      const signature = await sendGatewayTransaction(serializedSignedTx, network);
 
-      toastSuccess("Vault initialized successfully!", "", network);
+      await connection.onSignature(signature, async (result) => {
+        if (result.err) {
+          console.error("Error:", result.err);
+          toastError("Failed to initialize vault", result.err);
+          setIsInitializing(false);
+          return;
+        }
 
-      // Reset form and reload vaults
-      handleReset();
-      await reloadVaults();
-      setActiveTab("owner");
+        toastSuccess("Vault initialized successfully!", signature, network);
+        handleReset();
+        await reloadVaults();
+        setActiveTab("owner");
+        setIsInitializing(false);
+      }, "confirmed");
+
     } catch (err) {
       console.error("Error:", err);
       toastError("Failed to initialize vault", err);
-    } finally {
       setIsInitializing(false);
     }
   };
