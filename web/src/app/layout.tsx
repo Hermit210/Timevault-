@@ -1,35 +1,28 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { NetworkProvider } from "@/contexts/NetworkContext";
 import { WalletProvider } from "@/components/WalletProvider";
 import { Toaster } from "sonner";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
   title: "TimeVault - Crypto Inheritance & Deadman Switch",
-  description: "Secure automated inheritance for your digital assets on Solana. Set up deadman switches to protect your crypto legacy.",
+  description:
+    "Secure automated inheritance for your digital assets on Solana.",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${inter.className} antialiased`}>
         <NetworkProvider>
           <WalletProvider>
             {children}
@@ -40,3 +33,4 @@ export default function RootLayout({
     </html>
   );
 }
+ 
