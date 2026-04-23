@@ -1,5 +1,4 @@
 "use server";
-import { GATEWAY_ENDPOINT } from "./consts";
 
 async function buildGatewayTransaction(tx: string, network: "devnet" | "mainnet"): Promise<{
   transaction: string;
@@ -8,73 +7,50 @@ async function buildGatewayTransaction(tx: string, network: "devnet" | "mainnet"
     lastValidBlockHeight: string;
   };
 }> {
-  const gatewayUrl = `${GATEWAY_ENDPOINT}/v1/${network}?apiKey=${process.env["GATEWAY_API_KEY"]}`;
+  const rpcUrl = network === "mainnet"
+    ? `https://mainnet-beta.helius-rpc.com/?api-key=${process.env["HELIUS_API_KEY"]}`
+    : `https://devnet.helius-rpc.com/?api-key=${process.env["HELIUS_API_KEY"]}`;
 
-  console.log(gatewayUrl);
-  console.log(tx);
-
-  const buildGatewayTransactionResponse = await fetch(gatewayUrl, {
+  const blockhashResponse = await fetch(rpcUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      id: "timevault",
       jsonrpc: "2.0",
-      method: "buildGatewayTransaction",
-      params: [tx],
+      id: 1,
+      method: "getLatestBlockhash",
+      params: [{ commitment: "finalized" }],
     }),
   });
-
-  if (!buildGatewayTransactionResponse.ok) {
-    throw new Error("Failed to build gateway transaction");
-  }
-
-  const data = await buildGatewayTransactionResponse.json();
-  console.log(data);
-
-  const {
-    result: { transaction: encodedTransaction, latestBlockhash },
-  } = data as {
-    result: {
-      transaction: string;
-      latestBlockhash: {
-        blockhash: string;
-        lastValidBlockHeight: string;
-      };
-    };
-  };
+  const blockhashData = await blockhashResponse.json();
+  const { blockhash, lastValidBlockHeight } = blockhashData.result.value;
 
   return {
-    transaction: encodedTransaction,
+    transaction: tx,
     latestBlockhash: {
-      blockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      blockhash,
+      lastValidBlockHeight: lastValidBlockHeight.toString(),
     },
   };
 }
 
 async function sendGatewayTransaction(tx: string, network: "devnet" | "mainnet"): Promise<string> {
-  const gatewayUrl = `${GATEWAY_ENDPOINT}/v1/${network}?apiKey=${process.env["GATEWAY_API_KEY"]}`;
-  const sendGatewayTransactionResponse = await fetch(gatewayUrl, {
+  const rpcUrl = network === "mainnet"
+    ? `https://mainnet-beta.helius-rpc.com/?api-key=${process.env["HELIUS_API_KEY"]}`
+    : `https://devnet.helius-rpc.com/?api-key=${process.env["HELIUS_API_KEY"]}`;
+
+  const response = await fetch(rpcUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      id: "timevault",
       jsonrpc: "2.0",
+      id: 1,
       method: "sendTransaction",
-      params: [tx],
+      params: [tx, { encoding: "base64", skipPreflight: true }],
     }),
   });
-
-  if (!sendGatewayTransactionResponse.ok) {
-    throw new Error("Failed to send gateway transaction");
-  }
-
-  const gatewayResponse = await sendGatewayTransactionResponse.json();
-  return gatewayResponse.result;
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.result;
 }
 
 export { buildGatewayTransaction, sendGatewayTransaction };
